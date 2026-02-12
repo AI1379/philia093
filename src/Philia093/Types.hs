@@ -6,6 +6,7 @@ import qualified Data.ByteString.Base64 as B64
 import Data.Text (Text)
 import qualified Data.Text.Encoding as TE
 import GHC.Generics
+import Philia093.LLM.LLMTypes
 
 -- | Represents a simple email structure
 data Email = Email
@@ -64,9 +65,7 @@ data Config = Config
     imapUser :: Text,
     imapPass :: Text,
     webhookUrl :: Text,
-    llmApiKey :: Text,
-    llmApiBaseUrl :: Text,
-    llmModel :: Text,
+    llm :: LLMConfig,
     smtpHost :: Text
   }
   deriving (Show, Generic)

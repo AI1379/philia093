@@ -33,10 +33,20 @@ data LLMResponse = LLMResponse
 
 -- | Error types for LLM operations
 data LLMError = LLMError
-  { errorCode :: Int,
-    errorMessage :: Text
+  { code :: Int,
+    message :: Text
   }
   deriving (Show, Generic)
+
+-- | Configuration specific to an LLM provider
+data LLMConfig = LLMConfig
+  { apiKey :: Text,
+    baseUrl :: Text,
+    defaultModel :: Text
+  }
+  deriving (Show, Generic)
+
+instance FromJSON LLMConfig
 
 instance FromJSON LLMMessage
 
@@ -48,13 +58,7 @@ instance FromJSON LLMResponse
 
 instance FromJSON LLMError
 
--- | Configuration specific to an LLM provider
-data LLMConfig = LLMConfig
-  { apiKey :: Text,
-    baseUrl :: Text,
-    defaultModel :: Text
-  }
-  deriving (Show, Generic)
+instance ToJSON LLMConfig
 
 instance ToJSON LLMMessage
 

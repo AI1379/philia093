@@ -74,6 +74,7 @@ library
         yaml,
         containers,
         http-conduit,
+        http-types,
         mime-mail,
         smtp-mail,
         HaskellNet,
