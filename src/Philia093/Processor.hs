@@ -1,20 +1,72 @@
-module Philia093.Processor where
+module Philia093.Processor 
+  ( MonadProcessor(..)
+  , SimpleProcessorT(..)
+  , runSimpleProcessorT
+  , analyzeEmail
+  ) where
 
+import Control.Monad.Except (MonadError(..))
+import Control.Monad.IO.Class (MonadIO, liftIO)
+import Control.Monad.Trans.Class (MonadTrans, lift)
+import Control.Monad.Trans.Reader (ReaderT, runReaderT)
 import Data.Text (Text)
+import qualified Data.Text as T
+import Philia093.Notify (MonadNotify(..))
 import Philia093.Types
 
--- | Interface for Processing operations
-data ProcessorHandle = ProcessorHandle
-  { processEmail :: Email -> IO ProcessResult,
-    extractPdf :: Attachment -> IO Text,
-    callLLM :: Text -> IO Text
+-- | Typeclass for email processing operations
+class Monad m => MonadProcessor m where
+  processEmail :: Email -> m ProcessResult
+  extractPdfContent :: Attachment -> m Text
+  summarizeWithLLM :: Text -> m Text
+
+-- | Pure function to analyze email content - separation of concerns!
+analyzeEmail :: Email -> EmailAnalysis
+analyzeEmail email = EmailAnalysis
+  { hasAttachments = not . null $ attachments email
+  , bodyLength = T.length (body email)
+  , needsProcessing = not (T.null $ body email)
   }
 
--- | A simple rule-based implementation
-mkSimpleProcessor :: ProcessorHandle
-mkSimpleProcessor =
-  ProcessorHandle
-    { processEmail = \_ -> return (ProcessResult True "Processed by simple rules" True),
-      extractPdf = \_ -> return "PDF Content placeholder",
-      callLLM = \t -> return ("LLM Response for: " <> t)
-    }
+data EmailAnalysis = EmailAnalysis
+  { hasAttachments :: Bool
+  , bodyLength :: Int
+  , needsProcessing :: Bool
+  }
+
+-- | Simple rule-based processor transformer
+newtype SimpleProcessorT m a = SimpleProcessorT 
+  { unSimpleProcessorT :: ReaderT () m a }
+  deriving newtype (Functor, Applicative, Monad, MonadTrans, MonadIO)
+
+deriving newtype instance MonadNotify m => MonadNotify (SimpleProcessorT m)
+deriving newtype instance MonadError AppError m => MonadError AppError (SimpleProcessorT m)
+
+runSimpleProcessorT :: SimpleProcessorT m a -> m a
+runSimpleProcessorT = flip runReaderT () . unSimpleProcessorT
+
+-- | Simple implementation for development
+instance MonadIO m => MonadProcessor (SimpleProcessorT m) where
+  processEmail email = do
+    let analysis = analyzeEmail email
+    liftIO . putStrLn $ "Processing email: " <> T.unpack (subject email)
+    
+    pure $ ProcessResult
+      { handled = needsProcessing analysis
+      , summary = "Processed: " <> subject email
+      , shouldNotify = hasAttachments analysis
+      }
+  
+  extractPdfContent attachment = do
+    liftIO . putStrLn $ "Extracting PDF: " <> T.unpack (fileName attachment)
+    pure $ "PDF content from: " <> fileName attachment
+  
+  summarizeWithLLM text = do
+    liftIO . putStrLn $ "Calling LLM for text length: " <> show (T.length text)
+    pure $ "Summary: " <> T.take 50 text <> "..."
+
+-- | Lift through other transformers
+instance MonadProcessor m => MonadProcessor (ReaderT r m) where
+  processEmail = lift . processEmail
+  extractPdfContent = lift . extractPdfContent
+  summarizeWithLLM = lift . summarizeWithLLM

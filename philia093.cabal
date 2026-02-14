@@ -53,8 +53,23 @@ extra-doc-files:    README.md
 common warnings
     ghc-options: -Wall
 
+common extensions
+    default-extensions:
+        OverloadedStrings
+        DeriveGeneric
+        RecordWildCards
+        FlexibleContexts
+        GeneralizedNewtypeDeriving
+        FlexibleInstances
+        MultiParamTypeClasses
+        DerivingStrategies
+        StandaloneDeriving
+        UndecidableInstances
+        DuplicateRecordFields
+    default-language: Haskell2010
+
 library
-    import:           warnings
+    import:           warnings, extensions
     exposed-modules:
         Philia093.Types
         Philia093.Email
@@ -80,22 +95,17 @@ library
         HaskellNet,
         HaskellNet-SSL,
         mtl,
+        transformers,
         directory,
         filepath,
         time,
         base64-bytestring,
         async
     hs-source-dirs:   src
-    default-language: Haskell2010
-    default-extensions:
-        OverloadedStrings
-        DeriveGeneric
-        RecordWildCards
-        FlexibleContexts
 
 executable philia093
     -- Import common warning flags.
-    import:           warnings
+    import:           warnings, extensions
 
     -- .hs or .lhs file containing the Main module.
     main-is:          Main.hs
@@ -111,10 +121,8 @@ executable philia093
         base ^>=4.18.3.0,
         text,
         yaml,
+        mtl,
         philia093
 
     -- Directories containing source files.
     hs-source-dirs:   app
-
-    -- Base language which the package is written in.
-    default-language: Haskell2010
