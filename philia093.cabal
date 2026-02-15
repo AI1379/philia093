@@ -66,6 +66,7 @@ common extensions
         StandaloneDeriving
         UndecidableInstances
         DuplicateRecordFields
+        OverloadedRecordDot
     default-language: Haskell2010
 
 library
@@ -80,6 +81,10 @@ library
         Philia093.LLM.LLMProvider
         Philia093.LLM.LLMTypes
         Philia093.LLM.OpenAI
+
+        Philia093.Email.EmailTypes
+        Philia093.Email.IMAPService
+        Philia093.Email.SMTPService
 
     build-depends:
         base ^>=4.18.3.0,
