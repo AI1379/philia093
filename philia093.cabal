@@ -79,6 +79,7 @@ library
         Philia093.Processor
         Philia093.Notify
         Philia093.App
+        Philia093.Utilities
 
         Philia093.LLM.LLMProvider
         Philia093.LLM.LLMTypes

@@ -1,16 +1,18 @@
 module Philia093.Email.Utilities where
 
 import Control.Lens
+import Control.Lens.Internal.CTypes (Word64)
 import Data.ByteString.Lazy qualified as BL
 import Data.CaseInsensitive (CI (original))
 import Data.IMF
-import Data.MIME (MIMEMessage, mime)
+import Data.MIME (MIMEMessage, contentType, entities, matchContentType, mime, transferDecoded')
 import Data.MIME.Charset (defaultCharsets)
 import Data.MIME.EncodedWord (decodeEncodedWords)
 import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8Lenient)
 import Data.Time.LocalTime
+import Philia093.Email.EmailTypes (Email)
 import Philia093.Email.EmailTypes qualified as ET
 
 -- Purebred's Mailbox is the Address type of us, so it may seem a bit confusing
@@ -38,16 +40,17 @@ purebredHeaderListsToEmailHeaders =
 parseMIMEMessage :: MIMEMessage -> ET.Email
 parseMIMEMessage mimeMsg =
   ET.Email
-    { emailId = ET.EmailId _id, -- TODO: Not sure if this is the same as IMAP ID
+    { emailId = ET.EmailId _id,
+      uid = Nothing,
       from = concatMap purebredAddressToList _from,
       to = concatMap purebredAddressToList _to,
       cc = concatMap purebredAddressToList _cc,
       bcc = concatMap purebredAddressToList _bcc,
       subject = _subject,
-      bodyText = Nothing,
-      bodyHtml = Nothing,
+      bodyText = extractTextPlain mimeMsg,
+      bodyHtml = extractTextHtml mimeMsg,
       date = _date,
-      attachments = [],
+      attachments = [], -- TODO: Implement attachment parsing
       headers = _headers
     }
   where
@@ -66,3 +69,18 @@ parseEmail bs = do
   case parseResult of
     Left _ -> Nothing
     Right msg -> Just $ parseMIMEMessage msg
+
+isTextPlain :: (HasHeaders s) => s -> Bool
+isTextPlain = matchContentType "text" (Just "plain") . view contentType
+
+isTextHtml :: (HasHeaders s) => s -> Bool
+isTextHtml = matchContentType "text" (Just "html") . view contentType
+
+extractTextPlain :: MIMEMessage -> Maybe Text
+extractTextPlain mimeMsg = decodeUtf8Lenient <$> mimeMsg ^? entities . filtered isTextPlain . transferDecoded' . _Right . body
+
+extractTextHtml :: MIMEMessage -> Maybe Text
+extractTextHtml mimeMsg = decodeUtf8Lenient <$> mimeMsg ^? entities . filtered isTextHtml . transferDecoded' . _Right . body
+
+setUid :: Word64 -> ET.Email -> ET.Email
+setUid newUid email = email {ET.uid = Just newUid}

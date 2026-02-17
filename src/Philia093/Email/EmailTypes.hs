@@ -8,6 +8,7 @@ import Data.Text (Text)
 import Data.Text.Encoding qualified as TE
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
+import GHC.Word (Word64)
 
 data Address = Address
   { name :: Maybe Text,
@@ -23,6 +24,7 @@ newtype EmailId = EmailId {unEmailId :: Text}
 -- | Represents an email structure with better naming and compatibility
 data Email = Email
   { emailId :: EmailId,
+    uid :: Maybe Word64,
     from :: [Address],
     to :: [Address],
     cc :: [Address],
@@ -96,6 +98,7 @@ instance ToJSON Email where
   toJSON Email {..} =
     object
       [ "id" .= emailId,
+        "uid" .= uid,
         "from" .= from,
         "to" .= to,
         "cc" .= cc,
@@ -112,6 +115,7 @@ instance FromJSON Email where
   parseJSON = withObject "Email" $ \v ->
     Email
       <$> v .: "id"
+      <*> v .:? "uid"
       <*> v .: "from"
       <*> v .: "to"
       <*> v .:? "cc" .!= []
