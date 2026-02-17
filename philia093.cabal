@@ -67,7 +67,9 @@ common extensions
         UndecidableInstances
         DuplicateRecordFields
         OverloadedRecordDot
-    default-language: Haskell2010
+        LambdaCase
+        ImportQualifiedPost
+    default-language: GHC2021
 
 library
     import:           warnings, extensions
@@ -85,6 +87,9 @@ library
         Philia093.Email.EmailTypes
         Philia093.Email.IMAPService
         Philia093.Email.SMTPService
+    
+    other-modules:
+        Philia093.Email.Utilities
 
     build-depends:
         base ^>=4.18.3.0,
@@ -105,7 +110,11 @@ library
         filepath,
         time,
         base64-bytestring,
-        async
+        async,
+        network,
+        purebred-email,
+        lens,
+        case-insensitive
     hs-source-dirs:   src
 
 executable philia093

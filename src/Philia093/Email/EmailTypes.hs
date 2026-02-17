@@ -3,19 +3,17 @@ module Philia093.Email.EmailTypes where
 import Control.Exception
 import Data.Aeson
 import Data.ByteString (ByteString)
-import qualified Data.ByteString.Base64 as B64
+import Data.ByteString.Base64 qualified as B64
 import Data.Text (Text)
-import qualified Data.Text.Encoding as TE
+import Data.Text.Encoding qualified as TE
 import Data.Time (UTCTime)
 import GHC.Generics (Generic)
 
--- | Address representation compatible with mime-mail
 data Address = Address
-  { addressName :: Maybe Text,
-    addressEmail :: Text
+  { name :: Maybe Text,
+    email :: Text
   }
-  deriving stock (Show, Generic)
-  deriving (Eq)
+  deriving (Show, Generic)
 
 -- | Newtype wrapper for email IDs to avoid primitive obsession
 newtype EmailId = EmailId {unEmailId :: Text}
@@ -25,7 +23,7 @@ newtype EmailId = EmailId {unEmailId :: Text}
 -- | Represents an email structure with better naming and compatibility
 data Email = Email
   { emailId :: EmailId,
-    from :: Address,
+    from :: [Address],
     to :: [Address],
     cc :: [Address],
     bcc :: [Address],
