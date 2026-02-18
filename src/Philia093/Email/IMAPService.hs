@@ -199,12 +199,25 @@ disconnectIMAP conn = do
     _ -> putStrLn "No active connection to close"
 
 -- | Internal helper for maybe pattern matching in monads
+-- TODO: Consider using `hoistMaybe` from `errors` package or `Control.Monad.Trans.Maybe`
+-- This would be more idiomatic: hoistMaybe = MaybeT . return
+-- Alternatively, use `withMaybeT` pattern or just pattern match directly inline
 maybe' :: (Monad m) => m a -> (b -> m a) -> Maybe b -> m a
 maybe' nothingCase justCase = \case
   Nothing -> nothingCase
   Just x -> justCase x
 
 instance (MonadIO m) => MonadIMAP (IMAPT m) where
+  -- TODO: The pattern below uses explicit pattern matching with `maybe'`.
+  -- A more Haskell-like approach would use MaybeT or monadic composition:
+  --   fetchEmailById emailId = do
+  --     conn <- asks conn
+  --     MaybeT (pure conn.conn)
+  --       >>= lift . fetchEmailByIdWithConnection emailId
+  --       & runMaybeT <&> fromMaybe (throwError ...)
+  -- Or use `for_` / `traverse_` for its Monad instance:
+  --   traverse_ (fetchEmailByIdWithConnection emailId) conn.conn
+  --     >>= maybe (throwError $ IMAPError "...") pure
   fetchEmailById emailId = do
     conn <- ask
     liftIO . putStrLn $ "Fetching email by ID: " <> show emailId
@@ -214,6 +227,12 @@ instance (MonadIO m) => MonadIMAP (IMAPT m) where
       conn.conn
     where
       fetchEmailByIdWithConnection :: (MonadIO m) => EmailId -> IMAPConn.IMAPConnection -> IMAPT m Email
+      -- TODO: Use `readMaybe` from `Text.Read` for safe parsing, then use `<$>` (functor):
+      --   EmailId uidText -> imapConn -> do
+      --     imapUid <- maybe (throwError $ IMAPError "...") pure 
+      --                 $ readMaybe (unpack uidText)
+      -- Or use the Either pattern: 
+      --   readEither (unpack uidText) `exceptT` \err -> IMAPError (pack err)
       fetchEmailByIdWithConnection (EmailId uidText) imapConn = do
         let imapUid = read (unpack uidText) :: Word64
         liftIO . putStrLn $ "Fetching email UID: " <> show imapUid
@@ -228,6 +247,18 @@ instance (MonadIO m) => MonadIMAP (IMAPT m) where
         -- Decode ByteString to Text and construct Email object
         returnOrThrow (IMAPError "Failed to parse email") $ fmap (setUid imapUid) (parseEmail lazyMsgBytes)
 
+  -- TODO: This function has repeated pattern matching on `conn.conn`.
+  -- A more Haskell-like approach would use monadic composition:
+  --   fetchEmailBySearchQuery mailbox criteria = do
+  --     imapConn <- asks conn.conn >>= hoistMaybe (IMAPError "No connection")
+  --     liftIO $ select imapConn (unpack $ unMailbox mailbox)
+  --     fetchEmailBySearchQueryWithConnection criteria imapConn
+  -- Or use `MaybeT` wrapper:
+  --   fetchEmailBySearchQuery mailbox criteria = 
+  --     MaybeT (asks $ conn.conn) 
+  --       >>= fetchEmailBySearchQueryWithConnection' mailbox criteria
+  --       & runMaybeT
+  --       >>= maybe (throwError $ IMAPError "...") pure
   fetchEmailBySearchQuery mailbox criteria = do
     conn <- ask
     liftIO . putStrLn $ "Fetching email by search criteria: " <> show criteria <> " in mailbox: " <> show mailbox
@@ -247,6 +278,12 @@ instance (MonadIO m) => MonadIMAP (IMAPT m) where
       conn.conn
     where
       fetchEmailBySearchQueryWithConnection :: (MonadIO m) => [SearchQuery] -> IMAPConn.IMAPConnection -> IMAPT m [Email]
+      -- TODO: The composition `fetchEmailById . EmailId . pack . show` is good!
+      -- However, consider using point-free style more consistently:
+      --   fetchEmailBySearchQueryWithConnection searchQueries imapConn = 
+      --     liftIO (search imapConn searchQueries)
+      --       >>= traverse (EmailId . pack . show >>> fetchEmailById)
+      -- Also note: `>>>` (forward composition) often reads more naturally in pipeline-style code
       fetchEmailBySearchQueryWithConnection searchQueries imapConn = do
         -- Search for emails matching criteria
         uids <- liftIO $ search imapConn searchQueries
@@ -256,13 +293,11 @@ instance (MonadIO m) => MonadIMAP (IMAPT m) where
         traverse (fetchEmailById . EmailId . pack . show) uids
 
   markAsRead emailId = do
-    conn <- ask
     liftIO $ putStrLn $ "Marking email as read: " <> show emailId
     -- TODO: setFlags conn [Seen]
     pure ()
 
   moveEmail emailId targetMailbox = do
-    conn <- ask
     liftIO $ putStrLn $ "Moving email " <> show emailId <> " to " <> show targetMailbox
     -- TODO: copy then delete original
     pure ()

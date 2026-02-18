@@ -49,6 +49,19 @@ runSimpleProcessorT :: SimpleProcessorT m a -> m a
 runSimpleProcessorT = flip runReaderT () . unSimpleProcessorT
 
 -- | Simple implementation for development
+-- TODO: This instance has too much "imperative-style" logging mixed with logic.
+-- Consider separating logging from processing using a Writer monad or effects:
+--   instance (MonadIO m, MonadWriter [LogEntry] m) => MonadProcessor (SimpleProcessorT m) where
+--     processEmail email = do
+--       tell [LogInfo $ "Processing: " <> subject email]
+--       pure $ processEmailPure email
+--
+-- Or use a Callback/Applicative pattern:
+--   processEmail = \email ->
+--     logProcessing email *> pure (processEmailPure email)
+--
+-- Also, `liftIO . putStrLn` everywhere is a code smell - consider a logging typeclass:
+--   class MonadLog m where logInfo :: Text -> m ()
 instance (MonadIO m) => MonadProcessor (SimpleProcessorT m) where
   processEmail email = do
     let analysis = analyzeEmail email

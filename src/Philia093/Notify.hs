@@ -29,6 +29,18 @@ runWebhookNotifyT :: NotifyConfig -> WebhookNotifyT m a -> m a
 runWebhookNotifyT config = flip runReaderT config . unWebhookNotifyT
 
 -- | Webhook implementation
+-- TODO: Similar to other modules, logging mixed with business logic.
+-- Consider extracting the logging into a separate concern:
+--   instance (MonadIO m, MonadLog m) => MonadNotify (WebhookNotifyT m) where
+--     sendNotification msg = do
+--       config <- ask
+--       logInfo $ "Sending to " <> webhookUrl config
+--       -- actual HTTP call here
+--
+-- Also consider using `asks` instead of `ask >>= pattern match`:
+--   sendNotification message = do
+--     url <- asks webhookUrl
+--     liftIO $ sendToWebhook url message
 instance (MonadIO m) => MonadNotify (WebhookNotifyT m) where
   sendNotification message = do
     config <- WebhookNotifyT ask

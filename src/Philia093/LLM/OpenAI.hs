@@ -32,6 +32,17 @@ instance (MonadIO m) => MonadLLM (OpenAIT m) where
 
 -- | Internal function to perform the HTTP request
 -- Now uses MonadReader and MonadError!
+-- TODO: Consider using more point-free style and applicative composition:
+--   performRequest req = do
+--     config <- ask
+--     let endpoint = buildEndpoint config
+--         headers = buildHeaders config
+--     liftIO . doHttpRequest endpoint headers $ encode req
+--       >>= parseResponse
+-- Or use `ask >>=` with pure composition:
+--   performRequest = ask <&> buildRequest >>> liftIO . performHttp >>= parseResponse
+-- Also consider extracting the request building into a pure function:
+--   buildHttpRequest :: LLMConfig -> LLMRequest -> Request
 performRequest ::
   (MonadIO m, MonadReader LLMConfig m, MonadError LLMError m) =>
   LLMRequest ->
@@ -75,6 +86,27 @@ doHttpRequest endpoint headers body = do
   httpLbs request manager
 
 -- | Parse HTTP response - uses MonadError for error handling
+-- TODO: This nested if-then-else style is imperative. Consider using
+-- pattern matching with guards or `either` pattern:
+--   parseResponse response = 
+--     case statusCode (responseStatus response) of
+--       200 -> decode (responseBody response)
+--                & maybe (throwError parseError) pure
+--       code -> decode (responseBody response)
+--                 & maybe (throwError $ httpError code) throwError
+--   
+-- Or use `either` from `Control.Error` for clean error handling:
+--   parseResponse = \response -> 
+--     if success (statusCode $ responseStatus response)
+--       then hoistEither . note parseError $ decode (responseBody response)
+--       else hoistEither . note httpError $ decode (responseBody response)
+--   
+-- Or even more functional with `maybe`:
+--   parseResponse response
+--     | statusIsOk (responseStatus response) = 
+--         maybe (throwError parseError) pure $ decode body
+--     | otherwise = 
+--         maybe (throwError httpError) throwError $ decode body
 parseResponse ::
   (MonadError LLMError m) =>
   Response ByteString ->

@@ -72,6 +72,17 @@ instance FromJSON LLMRequest where
       <*> v .:? "max_tokens"
 
 instance ToJSON LLMRequest where
+  -- TODO: This manual list concatenation with `++` is not very elegant.
+  -- Consider using object construction with Maybe handling via `.=?` pattern:
+  --   toJSON LLMRequest {..} = object $ catMaybes
+  --     [ Just $ "model" .= model
+  --     , Just $ "messages" .= messages
+  --     , ("temperature" .=) <$> temperature
+  --     , ("max_tokens" .=) <$> maxTokens
+  --     ]
+  -- Or use Aeson's `omitNothingFields` option in options-based derivation:
+  --   instance ToJSON LLMRequest where
+  --     toJSON = genericToJSON defaultOptions { omitNothingFields = True }
   toJSON LLMRequest {..} =
     object $
       [ "model" .= model,
@@ -88,6 +99,8 @@ instance FromJSON LLMChoice where
       <*> v .:? "finish_reason"
 
 instance ToJSON LLMChoice where
+  -- TODO: Similar pattern - use omitNothingFields or catMaybes pattern
+  -- See LLMRequest TODO for cleaner alternatives
   toJSON LLMChoice {..} =
     object $
       [ "index" .= index,

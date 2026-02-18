@@ -32,6 +32,14 @@ runAppM :: AppEnv -> AppM a -> IO (Either AppError a)
 runAppM env = runExceptT . flip runReaderT env
 
 -- | Main bot logic - now uses typeclasses and constraint-based design!
+-- TODO: The `forever` + do-notation pattern is common but consider using a more
+-- declarative approach with `iterateM_` or `forever` with point-free composition:
+--   runBot = forever $
+--     liftIO (putStrLn "Bot starting cycle...")
+--       *> (processEmails `catchError` handleError)
+--       <&> logResult
+--       <* liftIO (sleep 60)
+-- This separates the "what" from the "how" more clearly.
 runBot ::
   ( MonadEmail m,
     MonadProcessor m,
@@ -56,6 +64,18 @@ runBot = forever $ do
     threadDelay (60 * 1000000)
 
 -- | Process all emails - separation of concerns
+-- TODO: Consider using `foldM` or `mapM_` with better composition:
+--   processEmails = 
+--     fetchEmails >>= \case
+--       [] -> pure $ Just "No emails to process"
+--       emails -> traverse processSingleEmail emails
+--                   <&> filter handled
+--                   <&> length
+--                   <&> formatResult
+-- Or even more point-free:
+--   processEmails = fetchEmails 
+--     <&> \case [] -> Just "No emails"; es -> Just $ showProcessCount es
+-- Using `<&>` (flipped fmap) reads left-to-right in pipeline style
 processEmails ::
   ( MonadEmail m,
     MonadProcessor m,
@@ -76,6 +96,29 @@ processEmails = do
       pure . Just $ T.pack $ "Processed " <> show processedCount <> " emails"
 
 -- | Process a single email
+-- TODO: This function mixes business logic with side effects in an imperative style.
+-- Consider refactoring to separate pure logic from effects:
+--   processSingleEmail :: Email -> m ProcessResult
+--   processSingleEmail email = 
+--     liftIO (logProcessing email)
+--       *> processEmail email
+--       <* whenResult handled markAsReadAction
+--       <* whenResult shouldNotify sendNotificationAction
+--   
+--   where
+--     markAsReadAction = markAsRead (emailId email)
+--     sendNotificationAction = sendNotification (summary result)
+--     whenResult condition action result = 
+--       when (condition result) action
+--   
+-- Or use a more declarative "effect row" pattern:
+--   processSingleEmail email = do
+--     result <- processEmail email
+--     result `when` handled *> markAsRead (emailId email)
+--     result `when` shouldNotify *> sendNotification (summary result)
+--     pure result
+--   where
+--     when r cond = when (cond r)
 processSingleEmail ::
   ( MonadEmail m,
     MonadProcessor m,
