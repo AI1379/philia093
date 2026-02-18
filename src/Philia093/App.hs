@@ -7,13 +7,12 @@ module Philia093.App
 where
 
 import Control.Concurrent (threadDelay)
-import Control.Monad (forM_, forever, when)
-import Control.Monad.Except (ExceptT, MonadError, catchError, runExceptT, throwError)
+import Control.Monad (forever, when)
+import Control.Monad.Except (ExceptT, MonadError, catchError, runExceptT)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.Reader (MonadReader, ReaderT, ask, runReaderT)
+import Control.Monad.Reader (ReaderT, runReaderT)
 import qualified Data.Text as T
 import Philia093.Email
-import Philia093.LLM.LLMProvider
 import Philia093.Notify
 import Philia093.Processor
 import Philia093.Types

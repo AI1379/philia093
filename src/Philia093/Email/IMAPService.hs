@@ -16,7 +16,6 @@ import Control.Monad.Reader (MonadReader, ReaderT, ask, runReaderT)
 import Control.Monad.Trans.Class (lift)
 import Data.ByteString.Lazy qualified as BL
 import Data.Text (Text, pack, unpack)
-import Data.Text.Encoding qualified as TE
 import Data.Word (Word64)
 import Network.HaskellNet.IMAP
   ( Flag (Seen),
@@ -29,20 +28,18 @@ import Network.HaskellNet.IMAP.Connection qualified as IMAPConn
 import Network.HaskellNet.IMAP.SSL (Settings (sslPort))
 import Network.HaskellNet.IMAP.SSL qualified as IMAPSSL
 import Philia093.Email.EmailTypes
-  ( Address (Address),
-    Email (..),
+  ( Email (..),
     EmailId (EmailId),
     IMAPConfig (host, password, port, useSecurity, user),
     IMAPError (..),
     Mailbox (unMailbox),
     Security (None, SSL, STARTTLS),
   )
-import Philia093.Email.Utilities (parseEmail, parseMIMEMessage, setUid)
+import Philia093.Email.Utilities (parseEmail, setUid)
 import Philia093.Utilities (returnOrThrow)
 import System.Timeout (timeout)
 
--- | Opaque connection handle for IMAP
--- In a real implementation, this would wrap HaskellNet's IMAPConnection
+-- | Internal representation of an IMAP connection with optional mailbox context
 data IMAPConnection = IMAPConnection
   { connHost :: String,
     connMailbox :: Maybe Mailbox,

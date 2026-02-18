@@ -12,10 +12,7 @@ where
 
 import Control.Exception (Exception)
 import Data.Aeson
-import Data.ByteString (ByteString)
-import qualified Data.ByteString.Base64 as B64
 import Data.Text (Text)
-import qualified Data.Text.Encoding as TE
 import GHC.Generics
 import Philia093.Email.EmailTypes
 import Philia093.LLM.LLMTypes

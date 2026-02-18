@@ -22,6 +22,7 @@
   - [ ] LLM Tool Calling
   - [ ] 接入 OpenClaw
 - 其他功能
+  - [ ] OAuth2 登录 Outlook
   - [ ] 邮件修改订阅列表
 
 > **这个项目和[纳西妲](https://github.com/AI1379/nahida-bot)有什么区别和关系吗？**

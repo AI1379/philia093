@@ -8,8 +8,7 @@ where
 import Control.Monad.Except (MonadError (..))
 import Control.Monad.IO.Class (MonadIO, liftIO)
 import Control.Monad.Trans.Class (MonadTrans, lift)
-import Control.Monad.Trans.Reader (ReaderT, ask, runReaderT)
-import Data.Text (Text)
+import Control.Monad.Trans.Reader (ReaderT, runReaderT)
 import Philia093.Notify (MonadNotify (..))
 import Philia093.Processor (MonadProcessor (..))
 import Philia093.Types
