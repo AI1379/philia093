@@ -12,7 +12,6 @@ import Data.Maybe (fromMaybe)
 import Data.Text (Text)
 import Data.Text.Encoding (decodeUtf8Lenient)
 import Data.Time.LocalTime
-import Philia093.Email.EmailTypes (Email)
 import Philia093.Email.EmailTypes qualified as ET
 
 -- Purebred's Mailbox is the Address type of us, so it may seem a bit confusing

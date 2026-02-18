@@ -28,12 +28,18 @@ import Network.HaskellNet.IMAP.Connection qualified as IMAPConn
 import Network.HaskellNet.IMAP.SSL (Settings (sslPort))
 import Network.HaskellNet.IMAP.SSL qualified as IMAPSSL
 import Philia093.Email.EmailTypes
-  ( Email (..),
-    EmailId (EmailId),
+  ( Email,
+    EmailId (..),
     IMAPConfig (host, password, port, useSecurity, user),
-    IMAPError (..),
+    IMAPError (IMAPProtoError),
     Mailbox (unMailbox),
     Security (None, SSL, STARTTLS),
+    authFailure,
+    connError,
+    mailboxError,
+    messageError,
+    opTimeout,
+    protoViolation,
   )
 import Philia093.Email.Utilities (parseEmail, setUid)
 import Philia093.Utilities (returnOrThrow)
@@ -134,8 +140,8 @@ connectIMAPIO config = do
     Right conn -> Right $ IMAPConnection (unpack config.host) Nothing (Just conn)
 
 -- | Internal: generic connection wrapper with timeout and error handling
-connectWithMethod :: String -> IO IMAPConn.IMAPConnection -> IO (Either IMAPError IMAPConn.IMAPConnection)
-connectWithMethod methodName action = do
+connectWithMethod :: String -> Text -> Int -> IO IMAPConn.IMAPConnection -> IO (Either IMAPError IMAPConn.IMAPConnection)
+connectWithMethod methodName host port action = do
   connRes <-
     try (timeout (5 * 10 ^ (6 :: Int)) action) ::
       IO (Either SomeException (Maybe IMAPConn.IMAPConnection))
@@ -143,10 +149,10 @@ connectWithMethod methodName action = do
   case connRes of
     Left ex -> do
       putStrLn $ "Connection error: " <> show ex
-      pure $ Left $ IMAPError (pack $ show ex)
+      pure $ Left $ IMAPProtoError $ connError host port (show ex)
     Right Nothing -> do
       putStrLn "Connection timed out"
-      pure $ Left $ IMAPError "Connection timed out"
+      pure $ Left $ IMAPProtoError $ opTimeout "IMAP connection" 5
     Right (Just conn) -> do
       putStrLn $ "Connected successfully " <> methodName
       pure $ Right conn
@@ -155,20 +161,20 @@ connectWithMethod methodName action = do
 connectIMAPNoSecurity :: Text -> Int -> IO (Either IMAPError IMAPConn.IMAPConnection)
 connectIMAPNoSecurity host port = do
   putStrLn $ "Connecting without Security to: " <> unpack host <> ":" <> show port
-  connectWithMethod "without security" (IMAP.connectIMAPPort (unpack host) (fromIntegral port))
+  connectWithMethod "without security" host port (IMAP.connectIMAPPort (unpack host) (fromIntegral port))
 
 -- | Internal: connect with SSL
 connectIMAPSSL :: Text -> Int -> IO (Either IMAPError IMAPConn.IMAPConnection)
 connectIMAPSSL host port = do
   putStrLn $ "Connecting with SSL to: " <> unpack host <> ":" <> show port
   let config = IMAPSSL.defaultSettingsIMAPSSL {sslPort = fromIntegral port}
-  connectWithMethod "with SSL" (IMAPSSL.connectIMAPSSLWithSettings (unpack host) config)
+  connectWithMethod "with SSL" host port (IMAPSSL.connectIMAPSSLWithSettings (unpack host) config)
 
 -- | Internal: connect with STARTTLS
 connectIMAPSTARTTLS :: Text -> Int -> IO (Either IMAPError IMAPConn.IMAPConnection)
 connectIMAPSTARTTLS host port = do
   putStrLn $ "Connecting with STARTTLS to: " <> unpack host <> ":" <> show port
-  pure $ Left $ IMAPError "STARTTLS not implemented in this mock"
+  pure $ Left $ IMAPProtoError $ protoViolation "STARTTLS not implemented" (Just "Feature not yet supported in this implementation")
 
 -- | Internal: login to IMAP server
 loginIMAP :: IMAPConn.IMAPConnection -> Text -> Text -> IO (Either IMAPError IMAPConn.IMAPConnection)
@@ -177,7 +183,7 @@ loginIMAP conn user password = do
     try (IMAP.login conn (unpack user) (unpack password)) ::
       IO (Either SomeException ())
   case result of
-    Left ex -> pure $ Left $ IMAPError (pack $ show ex)
+    Left ex -> pure $ Left $ IMAPProtoError $ authFailure user (show ex)
     Right _ -> pure $ Right conn
 
 -- | Internal: establish IMAP connection (ExceptT version)
@@ -222,17 +228,17 @@ instance (MonadIO m) => MonadIMAP (IMAPT m) where
     conn <- ask
     liftIO . putStrLn $ "Fetching email by ID: " <> show emailId
     maybe'
-      (throwError $ IMAPError "No active connection")
+      (throwError $ messageError (Just $ unEmailId emailId) "No active connection")
       (fetchEmailByIdWithConnection emailId)
       conn.conn
     where
       fetchEmailByIdWithConnection :: (MonadIO m) => EmailId -> IMAPConn.IMAPConnection -> IMAPT m Email
       -- TODO: Use `readMaybe` from `Text.Read` for safe parsing, then use `<$>` (functor):
       --   EmailId uidText -> imapConn -> do
-      --     imapUid <- maybe (throwError $ IMAPError "...") pure 
+      --     imapUid <- maybe (throwError $ messageError (Just uidText) "Invalid UID format") pure
       --                 $ readMaybe (unpack uidText)
-      -- Or use the Either pattern: 
-      --   readEither (unpack uidText) `exceptT` \err -> IMAPError (pack err)
+      -- Or use the Either pattern:
+      --   readEither (unpack uidText) `withError` \err -> messageError (Just uidText) (pack err)
       fetchEmailByIdWithConnection (EmailId uidText) imapConn = do
         let imapUid = read (unpack uidText) :: Word64
         liftIO . putStrLn $ "Fetching email UID: " <> show imapUid
@@ -245,7 +251,7 @@ instance (MonadIO m) => MonadIMAP (IMAPT m) where
         let lazyMsgBytes = BL.fromStrict msgBytes
 
         -- Decode ByteString to Text and construct Email object
-        returnOrThrow (IMAPError "Failed to parse email") $ fmap (setUid imapUid) (parseEmail lazyMsgBytes)
+        returnOrThrow (messageError (Just uidText) "Failed to parse email content") $ fmap (setUid imapUid) (parseEmail lazyMsgBytes)
 
   -- TODO: This function has repeated pattern matching on `conn.conn`.
   -- A more Haskell-like approach would use monadic composition:
@@ -254,8 +260,8 @@ instance (MonadIO m) => MonadIMAP (IMAPT m) where
   --     liftIO $ select imapConn (unpack $ unMailbox mailbox)
   --     fetchEmailBySearchQueryWithConnection criteria imapConn
   -- Or use `MaybeT` wrapper:
-  --   fetchEmailBySearchQuery mailbox criteria = 
-  --     MaybeT (asks $ conn.conn) 
+  --   fetchEmailBySearchQuery mailbox criteria =
+  --     MaybeT (asks $ conn.conn)
   --       >>= fetchEmailBySearchQueryWithConnection' mailbox criteria
   --       & runMaybeT
   --       >>= maybe (throwError $ IMAPError "...") pure
@@ -265,7 +271,7 @@ instance (MonadIO m) => MonadIMAP (IMAPT m) where
 
     -- Select mailbox before searching
     maybe'
-      (throwError $ IMAPError "No active connection")
+      (throwError $ mailboxError (Just $ unMailbox mailbox) "select" "No active connection")
       ( \imapConn -> do
           liftIO $ putStrLn $ "Selecting mailbox: " <> show mailbox
           liftIO $ select imapConn (unpack $ unMailbox mailbox)
@@ -273,14 +279,14 @@ instance (MonadIO m) => MonadIMAP (IMAPT m) where
       conn.conn
 
     maybe'
-      (throwError $ IMAPError "No active connection")
+      (throwError $ mailboxError (Just $ unMailbox mailbox) "search" "No active connection")
       (fetchEmailBySearchQueryWithConnection criteria)
       conn.conn
     where
       fetchEmailBySearchQueryWithConnection :: (MonadIO m) => [SearchQuery] -> IMAPConn.IMAPConnection -> IMAPT m [Email]
       -- TODO: The composition `fetchEmailById . EmailId . pack . show` is good!
       -- However, consider using point-free style more consistently:
-      --   fetchEmailBySearchQueryWithConnection searchQueries imapConn = 
+      --   fetchEmailBySearchQueryWithConnection searchQueries imapConn =
       --     liftIO (search imapConn searchQueries)
       --       >>= traverse (EmailId . pack . show >>> fetchEmailById)
       -- Also note: `>>>` (forward composition) often reads more naturally in pipeline-style code
