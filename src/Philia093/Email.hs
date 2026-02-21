@@ -1,74 +1,110 @@
+-- | Email module - handles email protocol operations (IMAP/SMTP)
+-- 
+-- 长期计划：将此模块分离为：
+-- - Philia093.Protocol.Email :: IMAP/SMTP 协议实现（Low-level）
+-- - Philia093.InfoSource.Email :: Email 作为 InfoSource 实现（Business logic）
+-- 
+-- 这样可以更清晰地分离关注点：
+-- - Protocol 处理邮件协议细节
+-- - InfoSource 实现从邮件获取信息的业务逻辑
 module Philia093.Email
   ( MonadEmail (..),
-    MockEmailT (..),
-    runMockEmailT,
   )
 where
 
 import Control.Monad.Except (MonadError (..))
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.Trans.Class (MonadTrans, lift)
-import Control.Monad.Trans.Reader (ReaderT, runReaderT)
-import Philia093.Notify (MonadNotify (..))
-import Philia093.Processor (MonadProcessor (..))
+import Control.Monad.Reader (MonadReader (ask), ReaderT)
 import Philia093.Types
 
--- | Typeclass for email operations - the Haskell way!
+-- ============================================================================
+-- | Typeclass for email operations
+-- ============================================================================
+
+-- | TypeClass for email protocol operations (current: IMAP operations)
+-- This will eventually be split into:
+-- - Protocol operations: fetchRawEmails, sendRawEmail, markAsRead (etc.)
+-- - InfoSource operations: fetchArticles (higher-level business logic)
 class (Monad m) => MonadEmail m where
+  -- | Fetch emails from IMAP server (mock: returns no emails)
   fetchEmails :: m [Email]
+
+  -- | Send an email via SMTP
   sendEmail :: Email -> m ()
+
+  -- | Mark an email as read in IMAP
   markAsRead :: EmailId -> m ()
 
--- | Mock implementation using transformer for testing
-newtype MockEmailT m a = MockEmailT {unMockEmailT :: ReaderT EmailConfig m a}
-  deriving newtype (Functor, Applicative, Monad, MonadTrans, MonadIO)
--- TODO: Consider using `via` deriving and explicit instance definitions for clarity.
--- Also, `ReaderT EmailConfig` suggests this transformer's only purpose is config access.
--- This could be replaced with `MonadReader EmailConfig m` constraint instead of a transformer.
--- Pattern:
---   newtype MockEmailT m a = MockEmailT { runMockEmailT :: m a }
---   instance MonadReader EmailConfig m => MonadEmail (MockEmailT m) where ...
+-- ============================================================================
+-- | Instance for the main BotM monad stack
+-- ============================================================================
 
-deriving newtype instance (MonadNotify m) => MonadNotify (MockEmailT m)
-
-deriving newtype instance (MonadProcessor m) => MonadProcessor (MockEmailT m)
-
-deriving newtype instance (MonadError AppError m) => MonadError AppError (MockEmailT m)
-
--- | Run the mock email transformer
-runMockEmailT :: EmailConfig -> MockEmailT m a -> m a
-runMockEmailT config = flip runReaderT config . unMockEmailT
-
--- | Mock instance - useful for testing and development
--- TODO: The repeated `liftIO $ putStrLn` pattern suggests we need a logging abstraction.
--- Consider:
---   1. Using `MonadSay` or `MonadLog` typeclass
---   2. Using `Writer` for test assertions
---   3. Using `trace` or `Debug.Trace` for development
---
--- Also, `pure []` and `pure ()` could be replaced with `pure mempty` for consistency
--- with Monoid/Monoidal patterns:
---   fetchEmails = liftIO (logStrLn "Mock: Fetching") *> pure mempty
-instance (MonadIO m) => MonadEmail (MockEmailT m) where
+instance (MonadIO m, MonadError AppError m) => MonadEmail (ReaderT BotEnv m) where
   fetchEmails = do
-    liftIO $ putStrLn "Mock: Fetching emails"
+    _env <- ask
+    -- Configuration is available via _env if needed in the future
+    liftIO $ putStrLn "Mock: Fetching emails from IMAP"
     pure []
 
   sendEmail email =
-    liftIO . putStrLn $ "Mock: Sending email with subject: " <> show (subject email)
+    liftIO . putStrLn $ "Mock: Sending email via SMTP with subject: " <> show (subject email)
 
   markAsRead emailId =
-    liftIO . putStrLn $ "Mock: Marking email as read: " <> show emailId
+    liftIO . putStrLn $ "Mock: Marking email as read in IMAP: " <> show emailId
 
--- | Real implementation would use HaskellNet / smtp-mail
--- instance MonadIO m => MonadEmail (RealEmailT m) where
+-- ============================================================================
+-- | Real implementations (TODO)
+-- ============================================================================
+
+-- | Real IMAP implementation would look like:
+-- instance (MonadIO m, MonadError AppError m) => MonadEmail (ReaderT BotEnv m) where
 --   fetchEmails = do
---     config <- MockEmailT ask
---     liftIO $ connectIMAP config >>= fetchUnread
---   ...
+--     env <- ask
+--     let config = botEmailConfig env
+--     let IMAPConfig {..} = imap config
+--     liftIO $ do
+--       conn <- connectIMAP host port user password useSecurity
+--       emails <- fetchUnread conn "INBOX"
+--       closeConnection conn
+--       pure emails
+--
+--   sendEmail email = do
+--     env <- ask
+--     let config = botEmailConfig env
+--     let SMTPConfig {..} = smtp config
+--     liftIO $ do
+--       conn <- connectSMTP host port user password useSecurity
+--       sendMailWithAuth conn (toSMTPMail email)
+--       closeConnection conn
+--
+--   markAsRead emailId = do
+--     -- 实现标记为已读的逻辑
+--     pure ()
 
--- Example of lifting MonadEmail through other transformers
-instance (MonadEmail m) => MonadEmail (ReaderT r m) where
-  fetchEmails = lift fetchEmails
-  sendEmail = lift . sendEmail
-  markAsRead = lift . markAsRead
+-- ============================================================================
+-- | Architecture Notes for Email Module Refactor
+-- ============================================================================
+
+-- | TODO: 在完成所有其他 InfoSource 实现后，重构此模块
+-- Current splitting plan:
+--
+-- 1. Philia093.Protocol.Email.IMAP (new)
+--    - connectIMAP, fetchEmails, markAsRead
+--    - Handle IMAP protocol details
+--
+-- 2. Philia093.Protocol.Email.SMTP (new)
+--    - connectSMTP, sendEmail
+--    - Handle SMTP protocol details
+--
+-- 3. Philia093.InfoSource.Email (new - for info retrieval)
+--    - Implement MonadInfoSource
+--    - Fetch emails as Article
+--    - Extract metadata and content
+--
+-- 4. Philia093.Notify.Email (new - for notifications)
+--    - Implement MonadNotify
+--    - Send notifications via Email
+--
+--     let IMAPConfig {..} = imap (botEmailConfig env)
+--     liftIO $ connectIMAP host port user password >>= fetchUnread
+--   ...

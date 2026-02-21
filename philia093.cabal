@@ -80,6 +80,7 @@ library
         Philia093.Notify
         Philia093.App
         Philia093.Utilities
+        Philia093.InfoSource
 
         Philia093.LLM.LLMProvider
         Philia093.LLM.LLMTypes
@@ -88,6 +89,8 @@ library
         Philia093.Email.EmailTypes
         Philia093.Email.IMAPService
         Philia093.Email.SMTPService
+
+        Philia093.InfoSource.Arxiv
     
     other-modules:
         Philia093.Email.Utilities

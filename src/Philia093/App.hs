@@ -1,45 +1,51 @@
 module Philia093.App
-  ( AppM,
-    AppEnv (..),
-    runAppM,
-    runBot,
+  ( runBot,
   )
 where
 
 import Control.Concurrent (threadDelay)
 import Control.Monad (forever, when)
-import Control.Monad.Except (ExceptT, MonadError, catchError, runExceptT)
+import Control.Monad.Except (MonadError, catchError)
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.Reader (ReaderT, runReaderT)
-import qualified Data.Text as T
+import Data.Text qualified as T
+import Data.Time (getCurrentTime)
 import Philia093.Email
+import Philia093.Email.EmailTypes (Address (..))
 import Philia093.Notify
 import Philia093.Processor
 import Philia093.Types
 
--- | Application environment - contains all configuration
--- This is the Haskell way: configuration in the Reader!
-newtype AppEnv = AppEnv
-  { appConfig :: AppConfig
-  }
+-- ============================================================================
 
--- | Application monad stack using MTL style
--- ReaderT for configuration, ExceptT for error handling, IO for effects
-type AppM = ReaderT AppEnv (ExceptT AppError IO)
+-- | Helper to convert Email to Article
+-- ============================================================================
 
--- | Run the application monad
-runAppM :: AppEnv -> AppM a -> IO (Either AppError a)
-runAppM env = runExceptT . flip runReaderT env
+-- | Convert an Email to an Article for unified processing
+emailToArticle :: Email -> IO Article
+emailToArticle email = do
+  now <- getCurrentTime
+  pure $
+    Article
+      { articleId = ArticleId (unEmailId $ emailId email),
+        title = subject email,
+        author = case from email of
+          [] -> Nothing
+          (Address {name = n} : _) -> n,
+        url = Nothing,
+        excerpt = maybe "" id (bodyText email),
+        sourceId = SourceId "email-inbox",
+        sourceType = SourceEmail,
+        publishedAt = date email,
+        fetchedAt = now,
+        metadata = mempty
+      }
 
--- | Main bot logic - now uses typeclasses and constraint-based design!
--- TODO: The `forever` + do-notation pattern is common but consider using a more
--- declarative approach with `iterateM_` or `forever` with point-free composition:
---   runBot = forever $
---     liftIO (putStrLn "Bot starting cycle...")
---       *> (processEmails `catchError` handleError)
---       <&> logResult
---       <* liftIO (sleep 60)
--- This separates the "what" from the "how" more clearly.
+-- ============================================================================
+
+-- | Main bot logic using constraint-based design
+-- ============================================================================
+
+-- | Main bot logic using constraint-based design
 runBot ::
   ( MonadEmail m,
     MonadProcessor m,
@@ -64,18 +70,6 @@ runBot = forever $ do
     threadDelay (60 * 1000000)
 
 -- | Process all emails - separation of concerns
--- TODO: Consider using `foldM` or `mapM_` with better composition:
---   processEmails = 
---     fetchEmails >>= \case
---       [] -> pure $ Just "No emails to process"
---       emails -> traverse processSingleEmail emails
---                   <&> filter handled
---                   <&> length
---                   <&> formatResult
--- Or even more point-free:
---   processEmails = fetchEmails 
---     <&> \case [] -> Just "No emails"; es -> Just $ showProcessCount es
--- Using `<&>` (flipped fmap) reads left-to-right in pipeline style
 processEmails ::
   ( MonadEmail m,
     MonadProcessor m,
@@ -96,29 +90,6 @@ processEmails = do
       pure . Just $ T.pack $ "Processed " <> show processedCount <> " emails"
 
 -- | Process a single email
--- TODO: This function mixes business logic with side effects in an imperative style.
--- Consider refactoring to separate pure logic from effects:
---   processSingleEmail :: Email -> m ProcessResult
---   processSingleEmail email = 
---     liftIO (logProcessing email)
---       *> processEmail email
---       <* whenResult handled markAsReadAction
---       <* whenResult shouldNotify sendNotificationAction
---   
---   where
---     markAsReadAction = markAsRead (emailId email)
---     sendNotificationAction = sendNotification (summary result)
---     whenResult condition action result = 
---       when (condition result) action
---   
--- Or use a more declarative "effect row" pattern:
---   processSingleEmail email = do
---     result <- processEmail email
---     result `when` handled *> markAsRead (emailId email)
---     result `when` shouldNotify *> sendNotification (summary result)
---     pure result
---   where
---     when r cond = when (cond r)
 processSingleEmail ::
   ( MonadEmail m,
     MonadProcessor m,
@@ -131,8 +102,11 @@ processSingleEmail ::
 processSingleEmail email = do
   liftIO . putStrLn $ "Processing: " <> T.unpack (subject email)
 
-  -- Process the email
-  result <- processEmail email
+  -- Convert email to article for unified processing
+  article <- liftIO $ emailToArticle email
+
+  -- Process the article
+  result <- processArticle article
 
   -- Handle the result
   when (handled result) $ do

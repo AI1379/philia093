@@ -1,77 +1,87 @@
 module Philia093.Processor
   ( MonadProcessor (..),
-    SimpleProcessorT (..),
-    runSimpleProcessorT,
-    analyzeEmail,
+    analyzeArticle,
+    ArticleAnalysis (..),
   )
 where
 
 import Control.Monad.Except (MonadError (..))
 import Control.Monad.IO.Class (MonadIO, liftIO)
-import Control.Monad.Trans.Class (MonadTrans, lift)
-import Control.Monad.Trans.Reader (ReaderT, runReaderT)
+import Control.Monad.Reader (MonadReader (ask), ReaderT)
 import Data.Text (Text)
 import qualified Data.Text as T
-import Philia093.Notify (MonadNotify (..))
+import Data.Time (getCurrentTime)
 import Philia093.Types
 
--- | Typeclass for email processing operations
+-- ============================================================================
+-- | Typeclass for article/email processing operations
+-- ============================================================================
+
+-- | Typeclass for processing operations
 class (Monad m) => MonadProcessor m where
-  processEmail :: Email -> m ProcessResult
+  -- | Process an article from any information source
+  processArticle :: Article -> m ProcessResult
+
+  -- | Extract PDF content from an attachment (useful for arxiv papers)
   extractPdfContent :: Attachment -> m Text
+
+  -- | Summarize text with LLM
   summarizeWithLLM :: Text -> m Text
 
--- | Pure function to analyze email content - separation of concerns!
-analyzeEmail :: Email -> EmailAnalysis
-analyzeEmail email =
-  EmailAnalysis
-    { hasAttachments = not . null $ attachments email,
-      bodyLength = T.length (maybe "" id $ bodyText email),
-      needsProcessing = not (T.null $ maybe "" id $ bodyText email)
-    }
+  -- | Calculate relevance score (0-1) for an article
+  calculateRelevance :: Article -> Text -> m Float
 
-data EmailAnalysis = EmailAnalysis
-  { hasAttachments :: Bool,
-    bodyLength :: Int,
-    needsProcessing :: Bool
+-- ============================================================================
+-- | Article Analysis Helper
+-- ============================================================================
+
+data ArticleAnalysis = ArticleAnalysis
+  { hasContent :: Bool,
+    contentLength :: Int,
+    needsProcessing :: Bool,
+    isRelevant :: Bool
   }
+  deriving (Show)
 
--- | Simple rule-based processor transformer
-newtype SimpleProcessorT m a = SimpleProcessorT
-  {unSimpleProcessorT :: ReaderT () m a}
-  deriving newtype (Functor, Applicative, Monad, MonadTrans, MonadIO)
+-- | Pure analysis function - separation of concerns
+analyzeArticle :: Article -> ArticleAnalysis
+analyzeArticle article =
+  ArticleAnalysis
+    { hasContent = not (T.null (excerpt article)),
+      contentLength = T.length (excerpt article),
+      needsProcessing = not (T.null (excerpt article)),
+      isRelevant = hasRelevantContent article
+    }
+  where
+    -- Simple heuristic for relevance
+    hasRelevantContent a = 
+      let titleWords = T.words (title a)
+          excerptLength = T.length (excerpt a)
+       in length titleWords > 2 && excerptLength > 50
 
-deriving newtype instance (MonadNotify m) => MonadNotify (SimpleProcessorT m)
+-- ============================================================================
+-- | Default Instance
+-- ============================================================================
 
-deriving newtype instance (MonadError AppError m) => MonadError AppError (SimpleProcessorT m)
+-- | Instance for the main BotM monad stack
+-- With the ReaderT pattern, processor can access LLM config via ReaderT
+instance (MonadIO m, MonadError AppError m) => MonadProcessor (ReaderT BotEnv m) where
+  processArticle article = do
+    env <- ask
+    let _config = botLLMConfig env
+    let analysis = analyzeArticle article
+    liftIO . putStrLn $ "Processing article: " <> T.unpack (title article)
 
-runSimpleProcessorT :: SimpleProcessorT m a -> m a
-runSimpleProcessorT = flip runReaderT () . unSimpleProcessorT
-
--- | Simple implementation for development
--- TODO: This instance has too much "imperative-style" logging mixed with logic.
--- Consider separating logging from processing using a Writer monad or effects:
---   instance (MonadIO m, MonadWriter [LogEntry] m) => MonadProcessor (SimpleProcessorT m) where
---     processEmail email = do
---       tell [LogInfo $ "Processing: " <> subject email]
---       pure $ processEmailPure email
---
--- Or use a Callback/Applicative pattern:
---   processEmail = \email ->
---     logProcessing email *> pure (processEmailPure email)
---
--- Also, `liftIO . putStrLn` everywhere is a code smell - consider a logging typeclass:
---   class MonadLog m where logInfo :: Text -> m ()
-instance (MonadIO m) => MonadProcessor (SimpleProcessorT m) where
-  processEmail email = do
-    let analysis = analyzeEmail email
-    liftIO . putStrLn $ "Processing email: " <> T.unpack (subject email)
-
+    currentTime <- liftIO getCurrentTime
     pure $
       ProcessResult
-        { handled = needsProcessing analysis,
-          summary = "Processed: " <> subject email,
-          shouldNotify = hasAttachments analysis
+        { article = article,
+          handled = needsProcessing analysis,
+          summary = "Processed: " <> title article,
+          relevanceScore = if isRelevant analysis then 0.8 else 0.3,
+          shouldNotify = hasContent analysis,
+          error = Nothing,
+          processedAt = currentTime
         }
 
   extractPdfContent attachment = do
@@ -79,11 +89,11 @@ instance (MonadIO m) => MonadProcessor (SimpleProcessorT m) where
     pure $ "PDF content from: " <> fileName attachment
 
   summarizeWithLLM text = do
+    env <- ask
+    let _config = botLLMConfig env
     liftIO . putStrLn $ "Calling LLM for text length: " <> show (T.length text)
     pure $ "Summary: " <> T.take 50 text <> "..."
 
--- | Lift through other transformers
-instance (MonadProcessor m) => MonadProcessor (ReaderT r m) where
-  processEmail = lift . processEmail
-  extractPdfContent = lift . extractPdfContent
-  summarizeWithLLM = lift . summarizeWithLLM
+  calculateRelevance _article _summary = do
+    liftIO $ putStrLn "Mock: Calculating relevance score"
+    pure 0.75
