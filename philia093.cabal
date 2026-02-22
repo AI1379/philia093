@@ -144,3 +144,22 @@ executable philia093
 
     -- Directories containing source files.
     hs-source-dirs:   app
+
+test-suite philia093-tests
+    import:           warnings, extensions
+    type:             exitcode-stdio-1.0
+    main-is:          Spec.hs
+    hs-source-dirs:   tests
+
+    -- Modules included in this test suite to make HLS happy.
+    other-modules:
+        ArxivParserSpec
+    build-depends:
+        base ^>=4.18.3.0,
+        hspec,
+        text,
+        time,
+        containers,
+        raw-strings-qq,
+        neat-interpolation,
+        philia093

@@ -74,7 +74,7 @@ data Article = Article
     fetchedAt :: UTCTime,
     metadata :: Map Text Text -- 扩展字段（JSON编码）
   }
-  deriving (Show, Generic)
+  deriving (Show, Generic, Eq)
 
 instance ToJSON Article
 
